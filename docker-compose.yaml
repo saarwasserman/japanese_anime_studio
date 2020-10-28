@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  redis:
+    image: "redis:6.0.8-alpine"
+    ports: 6379:9379
+  rq-workers:
+    depends_on: redis
+  web:
+    build: .
+    ports:
+      - 5000:5000
+
+
