@@ -1,13 +1,19 @@
 FROM python:3.8-alpine
 
+# code workspace
 WORKDIR /code
-ENV FLASK_APP=ghibli.py
-ENV FLASK_RUN_HOST=0.0.0.0
-RUN apk add --no-cache gcc musl-dev linux-headers
+COPY ./ /code/
+
+# system deps
+RUN apk add curl
 
 # poetry and python package requirements
-COPY requirements.txt requirements.txt
-RUN pip install -r requirements.txt
-EXPOSE 5000
-COPY . .
-CMD ["flask", "run"]
+RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python - \
+    && source $HOME/.poetry/env \
+    && poetry config virtualenvs.create false \
+    && poetry install
+
+EXPOSE 8000
+
+CMD ["flask", "run", "--host", "0.0.0.0"]
+

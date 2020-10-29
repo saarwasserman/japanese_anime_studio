@@ -1,34 +1,41 @@
 
+import logging
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import current_app
+
+from .. import crontab
 
 import requests
 import redis
 
-# from flask import jsonify, request, g, url_for, current_app
+
+logger = logging.getLogger(__name__)
 
 LAST_MOVIES_REQUEST_DATETIME = datetime.min
 
 
 def get_movies():
+    """Retrieve movie list from ghibli studio, update 'cache' if necessary
     """
-    """
 
-    #  fetch config for cron job for updating movies
-    # use_cron = current_app.config["MOVIES_USE_CRON"]
+    global LAST_MOVIES_REQUEST_DATETIME
 
-    # if not use_cron and LAST_REQUEST_DATETIME > timedelta 1 minute:
-    #     LAST_MOVIES_REQUEST_DATETIME = datetiem.now()
-    #     update_movies()
+    with redis.Redis(host=current_app.config["REDIS_URL"]) as redis_connection:
 
-    update_movies()
+        # fetch config for cron job for updating movies
+        use_cron = int(redis_connection.get("use_cron"))
+        if not use_cron:
+            now = datetime.now()
+            desired_delta = now - timedelta(seconds=current_app.config["MOVIES_UPDATE_INTERVAL"])  # noqa
+            if LAST_MOVIES_REQUEST_DATETIME < desired_delta:
+                LAST_MOVIES_REQUEST_DATETIME = now
+                update_movies()
+                current_app.logger.info("Retrieved data from Ghibli API")
 
-    # fetch data from redis
-    conn = redis.Redis(host='localhost')
-    data = conn.get("ghibli")
+        data = redis_connection.get("ghibli")
 
-    # TODO: add exception couldn't retrieve data
+    current_app.logger.info("Retrieved data from redis")
     return json.loads(data)
 
 
@@ -48,16 +55,17 @@ def update_movies():
             "people": []
         }
 
-    # only add name of participant, could add all data and let frontend show what is need
-    # size <-> latency tradeoff
     for participant in people.json():
         for film in participant["films"]:
             film_id = film.split('/')[-1]
             data[film_id]["people"].append(participant["name"])
 
     # redis
-    conn = redis.Redis(host='localhost')
-    conn.set("ghibli", json.dumps(data))
+    with redis.Redis(host=current_app.config["REDIS_URL"]) as redis_conn:
+        redis_conn.set("ghibli", json.dumps(data))
 
 
-    print(data)
+@crontab.job()  # default: every minute
+def update_movies_list():
+    update_movies()
+    logger.info("upadted data in redis")
